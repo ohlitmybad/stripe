@@ -1,0 +1,91 @@
+name: Add Stripe Member to Platform
+
+on:
+  workflow_dispatch:
+    inputs:
+      subscriber_name:
+        description: 'Name of the new subscriber'
+        required: true
+        type: string
+      subscriber_email:
+        description: 'Email of the new subscriber'
+        required: true
+        type: string
+      timestamp:
+        description: 'Timestamp of the subscription'
+        required: true
+        type: string
+      source:
+        description: 'Source of the subscription (e.g., stripe)'
+        required: true
+        type: string
+        default: 'stripe'
+
+jobs:
+  create-account:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install selenium
+        pip install webdriver-manager
+        # Add any other dependencies your script needs
+        # pip install -r requirements.txt  # if you have a requirements file
+        
+    - name: Install Chrome and ChromeDriver
+      run: |
+        # Install Google Chrome
+        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
+        
+    - name: Run account creation script
+      env:
+        SUBSCRIBER_NAME: ${{ github.event.inputs.subscriber_name }}
+        SUBSCRIBER_EMAIL: ${{ github.event.inputs.subscriber_email }}
+        TIMESTAMP: ${{ github.event.inputs.timestamp }}
+        SOURCE: ${{ github.event.inputs.source }}
+        # Add any secrets your script needs for the platform login
+        PLATFORM_USERNAME: ${{ secrets.PLATFORM_USERNAME }}
+        PLATFORM_PASSWORD: ${{ secrets.PLATFORM_PASSWORD }}
+      run: |
+        echo "Creating account for: $SUBSCRIBER_NAME ($SUBSCRIBER_EMAIL)"
+        echo "Timestamp: $TIMESTAMP"
+        echo "Source: $SOURCE"
+        
+        # Run your Python selenium script
+        python create_stripe_member_account.py
+        
+    - name: Log completion
+      if: success()
+      run: |
+        echo "Successfully created account for ${{ github.event.inputs.subscriber_name }}"
+        echo "Email: ${{ github.event.inputs.subscriber_email }}"
+        
+    - name: Handle failure
+      if: failure()
+      run: |
+        echo "Failed to create account for ${{ github.event.inputs.subscriber_name }}"
+        echo "Email: ${{ github.event.inputs.subscriber_email }}"
+        # You could add notification logic here (Slack, email, etc.)
+        
+    - name: Upload logs (optional)
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: account-creation-logs
+        path: |
+          *.log
+          screenshots/
+        retention-days: 7

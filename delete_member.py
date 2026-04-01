@@ -101,6 +101,18 @@ class MemberDeleter:
 
         self.wait.until(EC.presence_of_element_located((By.ID, "SFdekmnu")))
         self._wait_for_overlays()
+        # Ensure we're searching globally in All Accounts, not a specific folder.
+        try:
+            all_accounts_link = self.wait.until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "#SFhdrall a"))
+            )
+            self.driver.execute_script("arguments[0].click();", all_accounts_link)
+            self.wait.until(EC.presence_of_element_located((By.ID, "SFdekmnu")))
+            self.wait.until(EC.presence_of_element_located((By.ID, "SFdektag")))
+            self._wait_for_overlays()
+            logger.info("Switched scope to All Accounts")
+        except TimeoutException:
+            logger.warning("Could not switch to All Accounts; continuing with current scope")
 
     def find_and_open_member(self):
         """Search for the username across all members and open their profile."""

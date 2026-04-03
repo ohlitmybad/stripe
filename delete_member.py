@@ -38,6 +38,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+MW_ADMIN = "https://membershipworks.com/admin/"
+MW_ALL = "https://membershipworks.com/admin/#all"
+
 
 class MemberDeleter:
     def __init__(self):
@@ -69,7 +72,49 @@ class MemberDeleter:
             "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
         )
         self.wait = WebDriverWait(self.driver, 60)
+        self.wait_long = WebDriverWait(self.driver, 90)
         logger.info("Chrome driver set up successfully")
+
+    def _ensure_all_accounts_scope(self):
+        """
+        Global search must use All Accounts, not a folder. Hash navigation to
+        #all is more reliable than clicking #SFhdrall (often times out in CI/headless).
+        """
+        logger.info("Switching to All Accounts (global search)")
+        self.driver.get(MW_ALL)
+        time.sleep(2)
+        try:
+            self.wait_long.until(EC.presence_of_element_located((By.ID, "SFdektag")))
+            logger.info("All Accounts: search field ready")
+            return
+        except TimeoutException:
+            logger.warning("SFdektag not found after #all; trying Members then #all")
+
+        try:
+            members_link = WebDriverWait(self.driver, 45).until(
+                EC.element_to_be_clickable((By.XPATH, "//a[contains(., 'Members')]"))
+            )
+            self.driver.execute_script("arguments[0].click();", members_link)
+            time.sleep(2)
+            self.driver.get(MW_ALL)
+            time.sleep(2)
+            self.wait_long.until(EC.presence_of_element_located((By.ID, "SFdektag")))
+            logger.info("All Accounts after Members + #all")
+            return
+        except TimeoutException:
+            logger.warning("Members + #all did not expose search; trying nav link")
+
+        try:
+            all_accounts_link = WebDriverWait(self.driver, 30).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "#SFhdrall a, li#SFhdrall a"))
+            )
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", all_accounts_link)
+            self.driver.execute_script("arguments[0].click();", all_accounts_link)
+            time.sleep(2)
+            self.wait_long.until(EC.presence_of_element_located((By.ID, "SFdektag")))
+            logger.info("All Accounts via header link click")
+        except TimeoutException:
+            logger.warning("Could not switch to All Accounts; continuing with current scope")
 
     def login(self):
         logger.info("Logging in to MembershipWorks admin")
@@ -86,6 +131,7 @@ class MemberDeleter:
         login_button.click()
 
         self.driver.maximize_window()
+        self.wait.until(EC.presence_of_element_located((By.ID, "SFhdr")))
         logger.info("Logged in successfully")
 
     def navigate_to_members(self):
@@ -101,18 +147,7 @@ class MemberDeleter:
 
         self.wait.until(EC.presence_of_element_located((By.ID, "SFdekmnu")))
         self._wait_for_overlays()
-        # Ensure we're searching globally in All Accounts, not a specific folder.
-        try:
-            all_accounts_link = self.wait.until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "#SFhdrall a"))
-            )
-            self.driver.execute_script("arguments[0].click();", all_accounts_link)
-            self.wait.until(EC.presence_of_element_located((By.ID, "SFdekmnu")))
-            self.wait.until(EC.presence_of_element_located((By.ID, "SFdektag")))
-            self._wait_for_overlays()
-            logger.info("Switched scope to All Accounts")
-        except TimeoutException:
-            logger.warning("Could not switch to All Accounts; continuing with current scope")
+        self._ensure_all_accounts_scope()
 
     def find_and_open_member(self):
         """Search for the username across all members and open their profile."""
